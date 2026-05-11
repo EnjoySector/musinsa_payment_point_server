@@ -203,11 +203,41 @@ GET /api/v1/accounts/{accountId}/points/earns/{earnPointKey}/usages
 
 # API
 
-모든 변경 API는 `Idempotency-Key` 헤더가 필요합니다. 
+API는 변경 API, 조회 API, 관리자 API로 나누었습니다. 
+변경 API는 포인트 잔액이나 적립 상태를 바꾸며, 조회 API는 현재 상태와 이력을 확인합니다. 
+관리자 API는 수기 지급, 만료 정리, 정책 변경처럼 운영자가 사용하는 기능입니다.
+
+### 공통 규칙
+
+적립, 적립취소, 사용, 사용취소, 관리자 수기 지급 API는 `Idempotency-Key` 헤더가 필요합니다. 
 직접 호출할 때는 요청마다 임의의 고유 문자열을 넣으면 됩니다. 
 같은 요청을 재시도할 때는 같은 key를 다시 사용합니다.
 
-### 포인트 적립
+```http
+Idempotency-Key: earn-001
+Content-Type: application/json
+```
+
+공통 응답 형식은 다음과 같습니다.
+
+```json
+{
+  "code": "SUCCESS",
+  "message": "성공",
+  "data": {}
+}
+```
+
+### 변경 API
+
+| 기능 | Method | Path | 설명 |
+|---|---|---|---|
+| 포인트 적립 | `POST` | `/api/v1/points/earn` | 일반 적립을 생성합니다. 정책의 1회 적립 한도와 사용자별 보유 한도를 검증합니다. |
+| 적립취소 | `POST` | `/api/v1/points/earn/cancel` | 특정 적립 `pointKey`를 기준으로 적립 전체를 취소합니다. 이미 사용된 적립은 취소할 수 없습니다. |
+| 포인트 사용 | `POST` | `/api/v1/points/use` | 주문번호 기준으로 포인트를 사용합니다. 수기 지급 우선, 만료일 빠른 순으로 차감합니다. |
+| 사용취소 | `POST` | `/api/v1/points/use/cancel` | 특정 사용 `pointKey`를 기준으로 전체 또는 일부를 취소합니다. 만료된 원 적립은 신규 적립으로 복구합니다. |
+
+#### 포인트 적립
 
 ```http
 POST /api/v1/points/earn
@@ -225,7 +255,7 @@ Content-Type: application/json
 }
 ```
 
-### 적립취소
+#### 적립취소
 
 ```http
 POST /api/v1/points/earn/cancel
@@ -241,7 +271,7 @@ Content-Type: application/json
 }
 ```
 
-### 포인트 사용
+#### 포인트 사용
 
 ```http
 POST /api/v1/points/use
@@ -258,7 +288,7 @@ Content-Type: application/json
 }
 ```
 
-### 사용취소
+#### 사용취소
 
 ```http
 POST /api/v1/points/use/cancel
@@ -275,7 +305,41 @@ Content-Type: application/json
 }
 ```
 
-### 관리자 수기 지급
+### 조회 API
+
+조회 API는 포인트 변경 없이 현재 상태와 이력을 확인하기 위한 API입니다.
+
+| 기능 | Method | Path | 설명 |
+|---|---|---|---|
+| 포인트 요약 조회 | `GET` | `/api/v1/accounts/{accountId}/points/summary` | 현재 잔액, 적립 요약, 사용 가능 적립 목록을 조회합니다. |
+| 거래 이력 조회 | `GET` | `/api/v1/accounts/{accountId}/points/transactions?limit=20` | 최근 포인트 거래 이력을 조회합니다. 적립, 사용, 취소, 만료 흐름을 확인할 수 있습니다. |
+| 적립별 사용 추적 | `GET` | `/api/v1/accounts/{accountId}/points/earns/{earnPointKey}/usages` | 특정 적립 포인트가 어떤 주문에서 얼마 사용됐는지 조회합니다. `earnPointKey`는 적립 응답의 `pointKey`입니다. |
+
+```http
+GET /api/v1/accounts/1/points/summary
+GET /api/v1/accounts/1/points/transactions?limit=20
+GET /api/v1/accounts/1/points/earns/{earnPointKey}/usages
+```
+
+### 관리자 API
+
+관리자 API는 과제 범위상 별도 인증/인가 없이 요청 본문의 `adminId`를 관리자 행위자 식별자로 기록합니다.
+
+수기 지급은 중복 지급 방지를 위해 `Idempotency-Key`를 사용합니다. 
+정책 수정과 만료 정리 API는 운영성 API로 별도 멱등성 헤더 없이 처리합니다. 
+만료 정리는 한 번 처리된 적립의 상태가 `EXPIRED`로 변경되기 때문에 같은 계정을 다시 호출해도 추가 차감되지 않습니다.
+
+| 기능 | Method | Path | 설명 |
+|---|---|---|---|
+| 관리자 수기 지급 | `POST` | `/api/v1/admin/accounts/{accountId}/points/manual-earns` | 특정 계정에 `MANUAL` 적립을 생성합니다. 수기 지급 포인트는 사용 시 일반 적립보다 먼저 차감됩니다. |
+| 수기 지급 내역 조회 | `GET` | `/api/v1/admin/accounts/{accountId}/points/manual-earns` | 계정의 수기 지급 적립만 조회합니다. |
+| 만료 포인트 정리 | `POST` | `/api/v1/admin/accounts/{accountId}/points/expire` | 만료 대상 적립을 `EXPIRED`로 변경하고, `EXPIRE` 거래와 원장을 생성합니다. |
+| 포인트 정책 조회 | `GET` | `/api/v1/admin/point-policies` | 1회 적립 한도와 만료일 정책을 조회합니다. |
+| 포인트 정책 수정 | `PATCH` | `/api/v1/admin/point-policies/{policyId}` | 1회 적립 한도, 기본 만료일, 최소/최대 만료일, 정책 상태를 수정합니다. |
+| 사용자 정책 조회 | `GET` | `/api/v1/admin/point-user-policies` | 사용자별 최대 보유 한도 정책을 조회합니다. |
+| 사용자 정책 수정 | `PATCH` | `/api/v1/admin/point-user-policies/{policyId}` | 사용자별 최대 보유 가능 포인트와 정책 상태를 수정합니다. |
+
+#### 관리자 수기 지급
 
 ```http
 POST /api/v1/admin/accounts/3/points/manual-earns
@@ -292,25 +356,39 @@ Content-Type: application/json
 }
 ```
 
-## 조회 API
+#### 포인트 정책 수정
 
 ```http
-GET /api/v1/accounts/{accountId}/points/summary
-GET /api/v1/accounts/{accountId}/points/transactions?limit=20
-GET /api/v1/accounts/{accountId}/points/earns/{earnPointKey}/usages
+PATCH /api/v1/admin/point-policies/{policyId}
+Content-Type: application/json
 ```
 
-## 관리자 API
+```json
+{
+  "name": "기본 포인트 정책",
+  "maxEarnAmount": 100000,
+  "defaultExpireDays": 365,
+  "minExpireDays": 1,
+  "maxExpireDays": 1824,
+  "status": "ACTIVE",
+  "adminId": "admin-1"
+}
+```
+
+#### 사용자 정책 수정
 
 ```http
-POST /api/v1/admin/accounts/{accountId}/points/manual-earns
-GET  /api/v1/admin/accounts/{accountId}/points/manual-earns
-POST /api/v1/admin/accounts/{accountId}/points/expire
-
-GET   /api/v1/admin/point-policies
-PATCH /api/v1/admin/point-policies/{policyId}
-GET   /api/v1/admin/point-user-policies
 PATCH /api/v1/admin/point-user-policies/{policyId}
+Content-Type: application/json
+```
+
+```json
+{
+  "name": "낮은 한도 정책",
+  "maxBalanceAmount": 1500,
+  "status": "ACTIVE",
+  "adminId": "admin-1"
+}
 ```
 
 ## 테스트
