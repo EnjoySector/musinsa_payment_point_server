@@ -7,15 +7,15 @@
 일반 사용자 API의 행위자는 계정 정보에서 내부 세팅하고, 
 관리자 API는 `adminId`, 시스템 처리는 `SYSTEM` 식별자를 사용합니다.
 
-## 개발 환경
+### 개발 환경
 
 - Java 21
-- Spring Boot 3.x
+- Spring Boot 3
 - Spring Data JPA
 - H2 Database
 - Gradle
 
-## 빌드 및 실행
+### 빌드 및 실행
 
 ```bash
 ./gradlew clean build
@@ -36,7 +36,7 @@ User Name: sa
 Password: password
 ```
 
-## 초기 데이터
+### 초기 데이터
 
 초기 데이터는 `src/main/resources/data.sql`에 있습니다. 포인트 흐름을 바로 확인할 수 있도록 계정 3개와 정책 데이터를 미리 넣어두었습니다.
 
@@ -51,7 +51,7 @@ Password: password
 
 초기 잔액은 세 계정 모두 `0`입니다. 거래, 적립, 사용 데이터는 API 호출로 생성되도록 비워두었습니다.
 
-## 요구사항
+### 요구사항
 
 | 요구사항 | 구현 방식 |
 |---|---|
@@ -68,7 +68,7 @@ Password: password
 | 멱등성 | `point_idempotency`로 중복 요청 방지 |
 | 잔액 감사 | `point_transaction`, `point_ledger` 기록 |
 
-## 처리 흐름
+### 처리 흐름
 
 모든 포인트 변경 요청은 같은 패턴으로 처리합니다.
 
@@ -89,7 +89,7 @@ FOR UPDATE;
 
 Spring Data JPA를 사용하지만 잔액 정합성이 중요한 지점은 `PESSIMISTIC_WRITE`와 명시적인 update query로 제어했습니다.
 
-## 식별자와 키
+### 식별자 키
 
 포인트 거래에는 내부 DB 식별자와 외부 처리 기준 키를 분리해서 사용합니다.
 
@@ -107,7 +107,8 @@ Spring Data JPA를 사용하지만 잔액 정합성이 중요한 지점은 `PESS
 
 일자별 sequence는 `point_key_sequence` 테이블에서 관리하며, 발급 시 해당 일자 row를 비관적 락으로 잠급니다. 또한 `point_transaction.point_key`에 UNIQUE 제약을 두어 DB 레벨에서도 중복 발급을 방지합니다.
 
-취소 API는 내부 PK가 아니라 원 거래의 `pointKey`를 기준으로 요청합니다. 예를 들어 적립취소는 적립 응답의 `pointKey`, 사용취소는 사용 응답의 `pointKey`를 사용합니다.
+취소 API는 내부 PK가 아니라 원 거래의 `pointKey`를 기준으로 요청합니다. 
+예를 들어 적립취소는 적립 응답의 `pointKey`, 사용취소는 사용 응답의 `pointKey`를 사용합니다.
 
 ## 기능별 흐름
 
@@ -117,7 +118,8 @@ Spring Data JPA를 사용하지만 잔액 정합성이 중요한 지점은 `PESS
 - 주요 코드: `EarnPointService`, `EarnPointProcessor`, `EarnPointContextFactory`, `EarnPointValidator`
 - 주요 테이블: `point_transaction`, `point_earn`, `point_balance`, `point_ledger`
 
-`EarnPointService`가 요청을 멱등성 요청으로 변환하고, 공통 실행 흐름인 `PointCommandTemplate`을 호출합니다. 실제 적립 생성은 `EarnPointProcessor`가 담당하며, 정책의 1회 적립 한도와 사용자 보유 한도를 검증한 뒤 `EARN` 거래와 적립 row를 생성합니다.
+`EarnPointService`가 요청을 멱등성 요청으로 변환하고, 공통 실행 흐름인 `PointCommandTemplate`을 호출합니다. 
+실제 적립 생성은 `EarnPointProcessor`가 담당하며, 정책의 1회 적립 한도와 사용자 보유 한도를 검증한 뒤 `EARN` 거래와 적립 row를 생성합니다.
 
 ### 적립취소
 
@@ -125,7 +127,9 @@ Spring Data JPA를 사용하지만 잔액 정합성이 중요한 지점은 `PESS
 - 주요 코드: `EarnCancelService`, `EarnCancelProcessor`, `EarnCancelContextFactory`, `EarnCancelValidator`
 - 주요 테이블: `point_transaction`, `point_earn_cancel`, `point_earn`, `point_balance`, `point_ledger`
 
-특정 적립 건의 전체 금액만 취소할 수 있습니다. 이미 일부라도 사용됐거나 만료 또는 취소된 적립이면 거절합니다. 성공 시 `EARN_CANCEL` 거래와 취소 상세를 저장하고 잔액을 차감합니다.
+특정 적립 건의 전체 금액만 취소할 수 있습니다. 
+이미 일부라도 사용됐거나 만료 또는 취소된 적립이면 거절합니다. 
+성공 시 `EARN_CANCEL` 거래와 취소 상세를 저장하고 잔액을 차감합니다.
 
 ### 사용
 
@@ -133,7 +137,9 @@ Spring Data JPA를 사용하지만 잔액 정합성이 중요한 지점은 `PESS
 - 주요 코드: `UsePointService`, `UsePointProcessor`, `PointUsageAllocationCalculator`, `UsePointValidator`
 - 주요 테이블: `point_transaction`, `point_usage`, `point_usage_allocation`, `point_earn`, `point_balance`, `point_ledger`
 
-주문번호를 기준으로 포인트를 사용합니다. 사용 가능한 적립을 `MANUAL` 우선, 만료일 빠른 순서로 배분하고, 어떤 적립에서 얼마를 사용했는지 `point_usage_allocation`에 남깁니다.
+주문번호를 기준으로 포인트를 사용합니다. 
+사용 가능한 적립을 `MANUAL` 우선, 만료일 빠른 순서로 배분하고, 
+어떤 적립에서 얼마를 사용했는지 `point_usage_allocation`에 남깁니다.
 
 ### 사용취소
 
@@ -141,7 +147,8 @@ Spring Data JPA를 사용하지만 잔액 정합성이 중요한 지점은 `PESS
 - 주요 코드: `UseCancelService`, `UseCancelProcessor`, `PointUsageCancelAllocationCalculator`, `UseCancelValidator`
 - 주요 테이블: `point_transaction`, `point_usage_cancel`, `point_usage_cancel_allocation`, `point_usage_allocation`, `point_earn`, `point_balance`, `point_ledger`
 
-사용 금액 중 전체 또는 일부를 취소할 수 있습니다. 원래 차감된 적립이 아직 만료되지 않았다면 원 적립으로 복구하고, 이미 만료됐다면 `USE_CANCEL_RESTORE` 유형의 신규 적립을 생성합니다.
+사용 금액 중 전체 또는 일부를 취소할 수 있습니다. 
+원래 차감된 적립이 아직 만료되지 않았다면 원 적립으로 복구하고, 이미 만료됐다면 `USE_CANCEL_RESTORE` 유형의 신규 적립을 생성합니다.
 
 ## 적립별 사용 추적
 
@@ -166,7 +173,8 @@ Spring Data JPA를 사용하지만 잔액 정합성이 중요한 지점은 `PESS
 | `point_usage_allocation` | 1 | A 적립 id | 1 | 1000 | 0 | `USED` |
 | `point_usage_allocation` | 1 | B 적립 id | 2 | 200 | 0 | `USED` |
 
-그래서 A 적립의 사용 이력을 조회하면 `A1234` 주문에서 1000원이 사용됐다는 것을 확인할 수 있습니다. 금액 컬럼은 1원 단위 정수 금액으로 저장하므로 적립 포인트가 어떤 주문에서 사용됐는지 1원 단위까지 추적할 수 있습니다.
+그래서 A 적립의 사용 이력을 조회하면 `A1234` 주문에서 1000원이 사용됐다는 것을 확인할 수 있습니다. 
+금액 컬럼은 1원 단위 정수 금액으로 저장하므로 적립 포인트가 어떤 주문에서 사용됐는지 1원 단위까지 추적할 수 있습니다.
 
 조회 API:
 
@@ -186,12 +194,18 @@ GET /api/v1/accounts/{accountId}/points/earns/{earnPointKey}/usages
 이때 `point_usage_cancel_allocation.restore_type`은 각각 `NEW_EARN`, `ORIGINAL_EARN`으로 남습니다.
 
 
+## 만료 처리
+
+현재 구현은 관리자 만료 API와 포인트 변경 요청 시점의 만료 정리를 기준으로 동작합니다. 
+운영 환경에서는 별도 scheduler 또는 batch job으로 만료 대상 포인트를 주기적으로 처리하도록 확장할 수 있습니다.
 
 
 
-## API 예시
+# API
 
-모든 변경 API는 `Idempotency-Key` 헤더가 필요합니다. 면접관이 직접 호출할 때는 요청마다 임의의 고유 문자열을 넣으면 됩니다. 같은 요청을 재시도할 때는 같은 key를 다시 사용합니다.
+모든 변경 API는 `Idempotency-Key` 헤더가 필요합니다. 
+직접 호출할 때는 요청마다 임의의 고유 문자열을 넣으면 됩니다. 
+같은 요청을 재시도할 때는 같은 key를 다시 사용합니다.
 
 ### 포인트 적립
 
@@ -320,6 +334,9 @@ PATCH /api/v1/admin/point-user-policies/{policyId}
 
 ERD 파일은 src/main/resource/erd.svg 에 포함했습니다.
 
-## 만료 처리
 
-현재 구현은 관리자 만료 API와 포인트 변경 요청 시점의 만료 정리를 기준으로 동작합니다. 운영 환경에서는 별도 scheduler 또는 batch job으로 만료 대상 포인트를 주기적으로 처리하도록 확장할 수 있습니다.
+### AWS
+
+AWS 파일은  src/main/resource/aws-architecture.png 에 포함했습니다.
+
+
