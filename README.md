@@ -1,8 +1,11 @@
 # 무료 포인트 시스템 API
 
-무료 포인트의 적립, 적립취소, 사용, 사용취소를 처리하는 Spring Boot API입니다.
+무료 포인트의 적립, 적립취소, 사용, 사용취소를 처리하는 API 서버입니다.
 
-포인트 도메인이 중심인 과제이므로 사용자 정보는 최소한의 식별 정보만 두었습니다. 인증, 인가, 회원 상세 정보, 관리자 계정 관리는 구현 범위에서 제외했습니다. 일반 사용자 API의 행위자는 계정 정보에서 내부 세팅하고, 관리자 API는 `adminId`, 시스템 처리는 `SYSTEM` 식별자를 사용합니다.
+포인트 도메인이 중심인 과제이므로 사용자 정보는 최소한의 식별 정보만 두었습니다. 
+인증, 인가, 회원 상세 정보, 관리자 계정 관리는 구현 범위에서 제외했습니다. 
+일반 사용자 API의 행위자는 계정 정보에서 내부 세팅하고, 
+관리자 API는 `adminId`, 시스템 처리는 `SYSTEM` 식별자를 사용합니다.
 
 ## 개발 환경
 
@@ -48,7 +51,7 @@ Password: password
 
 초기 잔액은 세 계정 모두 `0`입니다. 거래, 적립, 사용 데이터는 API 호출로 생성되도록 비워두었습니다.
 
-## 요구사항 대응
+## 요구사항
 
 | 요구사항 | 구현 방식 |
 |---|---|
@@ -182,6 +185,10 @@ GET /api/v1/accounts/{accountId}/points/earns/{earnPointKey}/usages
 
 이때 `point_usage_cancel_allocation.restore_type`은 각각 `NEW_EARN`, `ORIGINAL_EARN`으로 남습니다.
 
+
+
+
+
 ## API 예시
 
 모든 변경 API는 `Idempotency-Key` 헤더가 필요합니다. 면접관이 직접 호출할 때는 요청마다 임의의 고유 문자열을 넣으면 됩니다. 같은 요청을 재시도할 때는 같은 key를 다시 사용합니다.
@@ -311,7 +318,7 @@ PATCH /api/v1/admin/point-user-policies/{policyId}
 
 ## ERD
 
-ERD 파일은 [resource/erd.svg](resource/erd.svg)에 포함했습니다.
+ERD 파일은 src/main/resource/erd.svg 에 포함했습니다.
 
 ## 만료 처리
 
